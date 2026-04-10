@@ -6,7 +6,7 @@ from pathlib import Path
 from flask import Flask, request, jsonify, render_template
 
 from core.parser import extract_text, ParserError
-from core.generator import generate_draft, OllamaConnectionError, ModelNotFoundError
+from core.generator import generate_draft, LLMConnectionError, ModelNotFoundError
 
 app = Flask(__name__)
 
@@ -52,7 +52,7 @@ def _process_job(job_id: str):
         job["result"] = draft
         job["output_path"] = str(output_path)
         job["status"] = "done"
-    except (ParserError, OllamaConnectionError, ModelNotFoundError) as e:
+    except (ParserError, LLMConnectionError, ModelNotFoundError) as e:
         job["status"] = "error"
         job["error"] = str(e)
     except Exception as e:

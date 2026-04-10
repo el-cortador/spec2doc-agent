@@ -1,7 +1,9 @@
 """
 Тесты модуля core/generator.py.
-Ollama не поднимается — все HTTP-вызовы мокируются.
+Покрывают оба бэкенда: ollama и llamacpp.
+Ollama/llama.cpp не поднимаются — все HTTP-вызовы мокируются.
 """
+import json
 import pytest
 import requests as req_lib
 from unittest.mock import patch, MagicMock
@@ -10,83 +12,173 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.generator import generate_draft, OllamaConnectionError, ModelNotFoundError
 
+# ── Вспомогательные фабрики ───────────────────────────────────────────────────
 
-def _mock_response(status_code: int, json_body: dict) -> MagicMock:
+def _ollama_stream_response(chunks: list[dict]) -> MagicMock:
+    """Мок Ollama: iter_lines() → JSON-строки чанков."""
     resp = MagicMock()
-    resp.status_code = status_code
-    resp.json.return_value = json_body
+    resp.status_code = 200
     resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = [json.dumps(c).encode() for c in chunks]
     return resp
 
 
-# ── Успешная генерация ────────────────────────────────────────────────────────
+def _llamacpp_stream_response(contents: list[str]) -> MagicMock:
+    """Мок llama.cpp: iter_lines() → SSE-строки data: {...} + data: [DONE]."""
+    lines = []
+    for content in contents:
+        chunk = {"choices": [{"delta": {"content": content}}]}
+        lines.append(f"data: {json.dumps(chunk)}".encode())
+    lines.append(b"data: [DONE]")
 
-def test_generate_draft_returns_content(tmp_path):
-    fake_reply = {"message": {"content": "## Черновик\n\n### Описание\nТекст"}}
-
-    with patch("core.generator.requests.post", return_value=_mock_response(200, fake_reply)):
-        result = generate_draft("Хочу фичу")
-
-    assert result == "## Черновик\n\n### Описание\nТекст"
-
-
-def test_generate_draft_sends_no_think_directive(tmp_path):
-    fake_reply = {"message": {"content": "ok"}}
-
-    with patch("core.generator.requests.post", return_value=_mock_response(200, fake_reply)) as mock_post:
-        generate_draft("Постановка")
-
-    payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
-    user_content = payload["messages"][1]["content"]
-    assert user_content.startswith("/no_think")
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = lines
+    return resp
 
 
-def test_generate_draft_passes_system_prompt(tmp_path):
-    fake_reply = {"message": {"content": "ok"}}
-
-    with patch("core.generator.requests.post", return_value=_mock_response(200, fake_reply)) as mock_post:
-        generate_draft("Постановка")
-
-    payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
-    system_content = payload["messages"][0]["content"]
-    # Системный промпт не должен быть пустым
-    assert len(system_content) > 100
+def _error_response(status_code: int) -> MagicMock:
+    resp = MagicMock()
+    resp.status_code = status_code
+    resp.raise_for_status = MagicMock()
+    resp.iter_lines.return_value = []
+    return resp
 
 
-def test_generate_draft_uses_correct_model():
-    fake_reply = {"message": {"content": "ok"}}
+# ── Тесты бэкенда: Ollama ─────────────────────────────────────────────────────
 
-    with patch("core.generator.requests.post", return_value=_mock_response(200, fake_reply)) as mock_post:
-        generate_draft("Постановка")
+class TestOllamaBackend:
 
-    payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
-    assert payload["model"] == "qwen3:4b"
+    @pytest.fixture(autouse=True)
+    def use_ollama(self, monkeypatch):
+        monkeypatch.setenv("BACKEND", "ollama")
+        # Перезагружаем модуль чтобы подхватить новый env
+        import importlib
+        import core.generator as gen
+        importlib.reload(gen)
+        self.gen = gen
+
+    def test_returns_content(self):
+        chunks = [
+            {"message": {"content": "## Черновик\nТекст"}, "done": False},
+            {"message": {"content": ""}, "done": True},
+        ]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)):
+            result = self.gen.generate_draft("постановка")
+        assert result == "## Черновик\nТекст"
+
+    def test_joins_multiple_chunks(self):
+        chunks = [
+            {"message": {"content": "часть1 "}, "done": False},
+            {"message": {"content": "часть2"}, "done": False},
+            {"message": {"content": ""}, "done": True},
+        ]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)):
+            result = self.gen.generate_draft("постановка")
+        assert result == "часть1 часть2"
+
+    def test_sends_no_think_directive(self):
+        chunks = [{"message": {"content": "ok"}, "done": True}]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert payload["messages"][1]["content"].startswith("/no_think")
+
+    def test_passes_system_prompt(self):
+        chunks = [{"message": {"content": "ok"}, "done": True}]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert len(payload["messages"][0]["content"]) > 100
+
+    def test_uses_streaming(self):
+        chunks = [{"message": {"content": "ok"}, "done": True}]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert payload["stream"] is True
+
+    def test_wraps_text_in_tags(self):
+        chunks = [{"message": {"content": "ok"}, "done": True}]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
+            self.gen.generate_draft("моя постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        user = payload["messages"][1]["content"]
+        assert "<ПОСТАНОВКА>" in user and "моя постановка" in user and "</ПОСТАНОВКА>" in user
+
+    def test_uses_correct_model(self):
+        chunks = [{"message": {"content": "ok"}, "done": True}]
+        with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert payload["model"] == "qwen3:4b"
+
+    def test_connection_error(self):
+        with patch.object(self.gen.requests, "post", side_effect=req_lib.exceptions.ConnectionError):
+            with pytest.raises(self.gen.LLMConnectionError, match="ollama serve"):
+                self.gen.generate_draft("текст")
+
+    def test_model_not_found(self):
+        with patch.object(self.gen.requests, "post", return_value=_error_response(404)):
+            with pytest.raises(self.gen.ModelNotFoundError, match="ollama pull"):
+                self.gen.generate_draft("текст")
 
 
-def test_generate_draft_wraps_text_in_tags():
-    fake_reply = {"message": {"content": "ok"}}
+# ── Тесты бэкенда: llama.cpp ─────────────────────────────────────────────────
 
-    with patch("core.generator.requests.post", return_value=_mock_response(200, fake_reply)) as mock_post:
-        generate_draft("Моя постановка")
+class TestLlamaCppBackend:
 
-    payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
-    user_content = payload["messages"][1]["content"]
-    assert "<ПОСТАНОВКА>" in user_content
-    assert "Моя постановка" in user_content
-    assert "</ПОСТАНОВКА>" in user_content
+    @pytest.fixture(autouse=True)
+    def use_llamacpp(self, monkeypatch):
+        monkeypatch.setenv("BACKEND", "llamacpp")
+        import importlib
+        import core.generator as gen
+        importlib.reload(gen)
+        self.gen = gen
 
+    def test_returns_content(self):
+        with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["## Черновик\nТекст"])):
+            result = self.gen.generate_draft("постановка")
+        assert result == "## Черновик\nТекст"
 
-# ── Ошибки подключения ────────────────────────────────────────────────────────
+    def test_joins_multiple_chunks(self):
+        with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["часть1 ", "часть2"])):
+            result = self.gen.generate_draft("постановка")
+        assert result == "часть1 часть2"
 
-def test_ollama_connection_error():
-    with patch("core.generator.requests.post", side_effect=req_lib.exceptions.ConnectionError):
-        with pytest.raises(OllamaConnectionError, match="ollama serve"):
-            generate_draft("текст")
+    def test_sends_no_think_directive(self):
+        with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["ok"])) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert payload["messages"][1]["content"].startswith("/no_think")
 
+    def test_uses_streaming(self):
+        with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["ok"])) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert payload["stream"] is True
 
-def test_model_not_found_error():
-    with patch("core.generator.requests.post", return_value=_mock_response(404, {})):
-        with pytest.raises(ModelNotFoundError, match="ollama pull"):
-            generate_draft("текст")
+    def test_uses_max_tokens_not_num_predict(self):
+        with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["ok"])) as mock_post:
+            self.gen.generate_draft("постановка")
+        payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
+        assert "max_tokens" in payload
+        assert "options" not in payload
+
+    def test_parses_sse_done_sentinel(self):
+        """Генерация останавливается на data: [DONE], не падает."""
+        with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["текст"])):
+            result = self.gen.generate_draft("постановка")
+        assert result == "текст"
+
+    def test_connection_error(self):
+        with patch.object(self.gen.requests, "post", side_effect=req_lib.exceptions.ConnectionError):
+            with pytest.raises(self.gen.LLMConnectionError, match="llama-server"):
+                self.gen.generate_draft("текст")
+
+    def test_model_not_found(self):
+        with patch.object(self.gen.requests, "post", return_value=_error_response(404)):
+            with pytest.raises(self.gen.ModelNotFoundError, match="llama-server"):
+                self.gen.generate_draft("текст")
