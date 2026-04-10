@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>spec2doc-agent</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -71,18 +72,11 @@
       background: #eff6ff;
     }
 
-    #drop-zone p {
-      color: #555;
-      margin-bottom: 12px;
-    }
-
-    #drop-zone span {
-      font-size: 12px;
-      color: #999;
-    }
-
+    #drop-zone p { color: #555; margin-bottom: 12px; }
+    #drop-zone span { font-size: 12px; color: #999; }
     #file-input { display: none; }
 
+    /* ── Кнопки ─────────────────────────────────────────────── */
     .btn {
       display: inline-block;
       padding: 8px 18px;
@@ -98,18 +92,19 @@
     .btn-primary:not(:disabled):hover { background: #2563eb; }
     .btn-secondary { background: #e5e7eb; color: #374151; }
     .btn-secondary:not(:disabled):hover { background: #d1d5db; }
+    .btn-sm { padding: 4px 12px; font-size: 12px; }
 
     /* ── Список выбранных файлов ────────────────────────────── */
     #file-list-section { display: none; }
 
-    #file-list-section h2 {
+    #file-list-section h2, #jobs-section h2 {
       font-size: 14px;
       font-weight: 600;
       margin-bottom: 10px;
       color: #374151;
     }
 
-    #file-list {
+    #file-list, #jobs-table-wrap {
       background: #fff;
       border: 1px solid #e0e0e0;
       border-radius: 8px;
@@ -132,10 +127,7 @@
       overflow: hidden;
     }
 
-    .file-icon {
-      font-size: 18px;
-      flex-shrink: 0;
-    }
+    .file-icon { font-size: 18px; flex-shrink: 0; }
 
     .file-name {
       white-space: nowrap;
@@ -153,9 +145,143 @@
     .file-item-error .file-size { color: #ef4444; }
 
     /* ── Кнопки действий ────────────────────────────────────── */
-    #actions {
-      display: none;
-      gap: 10px;
+    #actions { display: none; gap: 10px; }
+
+    /* ── Таблица задач ──────────────────────────────────────── */
+    #jobs-section { display: none; }
+
+    #jobs-table-wrap table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    #jobs-table-wrap th {
+      text-align: left;
+      padding: 10px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #e0e0e0;
+      background: #fafafa;
+    }
+
+    #jobs-table-wrap td {
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle;
+    }
+
+    #jobs-table-wrap tr:last-child td { border-bottom: none; }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 500;
+    }
+    .status-queued     { background: #f3f4f6; color: #6b7280; }
+    .status-processing { background: #eff6ff; color: #2563eb; }
+    .status-done       { background: #f0fdf4; color: #15803d; }
+    .status-error      { background: #fff7f7; color: #dc2626; }
+
+    .spinner {
+      width: 10px; height: 10px;
+      border: 2px solid #93c5fd;
+      border-top-color: #2563eb;
+      border-radius: 50%;
+      display: inline-block;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Панель предпросмотра ───────────────────────────────── */
+    #preview-section { display: none; }
+
+    #preview-section h2 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: #374151;
+    }
+
+    #preview-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    #preview-filename {
+      font-size: 13px;
+      color: #6b7280;
+    }
+
+    #preview-saved {
+      font-size: 12px;
+      color: #15803d;
+      background: #f0fdf4;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+
+    #preview-body {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 24px 28px;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+
+    /* Markdown-стили внутри предпросмотра */
+    #preview-body h1, #preview-body h2, #preview-body h3 {
+      margin: 1.2em 0 0.5em;
+      line-height: 1.3;
+    }
+    #preview-body h1 { font-size: 20px; }
+    #preview-body h2 { font-size: 17px; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; }
+    #preview-body h3 { font-size: 15px; }
+    #preview-body p  { margin: 0.6em 0; }
+    #preview-body ul, #preview-body ol { margin: 0.6em 0 0.6em 1.4em; }
+    #preview-body li { margin: 0.2em 0; }
+    #preview-body code {
+      background: #f3f4f6;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 13px;
+      font-family: "Cascadia Code", "Fira Code", monospace;
+    }
+    #preview-body pre {
+      background: #f3f4f6;
+      padding: 14px 16px;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 0.8em 0;
+    }
+    #preview-body pre code { background: none; padding: 0; }
+    #preview-body table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 0.8em 0;
+    }
+    #preview-body th, #preview-body td {
+      border: 1px solid #e0e0e0;
+      padding: 6px 12px;
+      text-align: left;
+    }
+    #preview-body th { background: #fafafa; font-weight: 600; }
+    #preview-body blockquote {
+      border-left: 3px solid #d1d5db;
+      padding-left: 12px;
+      color: #6b7280;
+      margin: 0.6em 0;
     }
   </style>
 </head>
@@ -194,6 +320,36 @@
     <button id="btn-clear" class="btn btn-secondary">Очистить</button>
   </div>
 
+  <!-- Таблица задач -->
+  <section id="jobs-section">
+    <h2>Очередь обработки</h2>
+    <div id="jobs-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:50%">Файл</th>
+            <th style="width:30%">Статус</th>
+            <th style="width:20%">Действие</th>
+          </tr>
+        </thead>
+        <tbody id="jobs-tbody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Панель предпросмотра -->
+  <section id="preview-section">
+    <div id="preview-header">
+      <h2>Предпросмотр черновика</h2>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span id="preview-filename"></span>
+        <span id="preview-saved"></span>
+        <button class="btn btn-secondary btn-sm" id="btn-copy">Скопировать текст</button>
+      </div>
+    </div>
+    <div id="preview-body"></div>
+  </section>
+
 </main>
 
 <script>
@@ -208,13 +364,13 @@
     return name.toLowerCase().endsWith(".pdf") ? "📄" : "📝";
   }
 
-  // ── Проверка Ollama (/health будет добавлен позже) ─────────
+  // ── Проверка Ollama ────────────────────────────────────────
   const healthDot  = document.getElementById("health-dot");
   const healthText = document.getElementById("health-text");
 
   async function checkHealth() {
     try {
-      const res = await fetch("/health");
+      const res  = await fetch("/health");
       const data = await res.json();
       if (data.ollama && data.model_ready) {
         healthDot.className = "green";
@@ -234,18 +390,26 @@
   checkHealth();
 
   // ── Состояние ──────────────────────────────────────────────
-  // Файлы, прошедшие клиентскую валидацию
-  let validFiles = [];
+  let validFiles  = [];
+  let activeJobs  = {};     // job_id → { filename, status }
+  let pollTimer   = null;
+  let rawMarkdown = "";     // для копирования
 
-  const ALLOWED_EXT  = [".pdf", ".docx"];
-  const MAX_SIZE     = 20 * 1024 * 1024;
+  const ALLOWED_EXT = [".pdf", ".docx"];
+  const MAX_SIZE    = 20 * 1024 * 1024;
 
-  const dropZone       = document.getElementById("drop-zone");
-  const fileInput      = document.getElementById("file-input");
+  const dropZone        = document.getElementById("drop-zone");
+  const fileInput       = document.getElementById("file-input");
   const fileListSection = document.getElementById("file-list-section");
-  const fileListEl     = document.getElementById("file-list");
-  const actionsEl      = document.getElementById("actions");
-  const btnProcess     = document.getElementById("btn-process");
+  const fileListEl      = document.getElementById("file-list");
+  const actionsEl       = document.getElementById("actions");
+  const btnProcess      = document.getElementById("btn-process");
+  const jobsSection     = document.getElementById("jobs-section");
+  const jobsTbody       = document.getElementById("jobs-tbody");
+  const previewSection  = document.getElementById("preview-section");
+  const previewBody     = document.getElementById("preview-body");
+  const previewFilename = document.getElementById("preview-filename");
+  const previewSaved    = document.getElementById("preview-saved");
 
   // ── Валидация и отображение выбранных файлов ───────────────
   function handleFiles(fileList) {
@@ -264,7 +428,6 @@
       }
     }
 
-    // Добавляем к уже выбранным (дедупликация по имени)
     const existingNames = new Set(validFiles.map(f => f.name));
     for (const f of accepted) {
       if (!existingNames.has(f.name)) validFiles.push(f);
@@ -276,9 +439,7 @@
   function renderFileList(errors = []) {
     fileListEl.innerHTML = "";
 
-    // Принятые файлы
     for (const f of validFiles) {
-      const ext = "." + f.name.split(".").pop().toLowerCase();
       fileListEl.innerHTML += `
         <div class="file-item">
           <div class="file-item-name">
@@ -289,7 +450,6 @@
         </div>`;
     }
 
-    // Отклонённые файлы
     for (const e of errors) {
       fileListEl.innerHTML += `
         <div class="file-item file-item-error">
@@ -313,9 +473,7 @@
     dropZone.classList.add("drag-over");
   });
 
-  dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("drag-over");
-  });
+  dropZone.addEventListener("dragleave", () => dropZone.classList.remove("drag-over"));
 
   dropZone.addEventListener("drop", e => {
     e.preventDefault();
@@ -329,7 +487,7 @@
 
   fileInput.addEventListener("change", () => {
     handleFiles(fileInput.files);
-    fileInput.value = ""; // сбросить, чтобы можно было выбрать тот же файл повторно
+    fileInput.value = "";
   });
 
   // ── Кнопка «Очистить» ─────────────────────────────────────
@@ -338,7 +496,63 @@
     renderFileList();
   });
 
-  // ── Кнопка «Обработать» — будет расширена в ФТ 4.6 ────────
+  // ── Таблица задач ──────────────────────────────────────────
+  const STATUS_LABELS = {
+    queued:     '<span class="status-badge status-queued">В очереди</span>',
+    processing: '<span class="status-badge status-processing"><span class="spinner"></span>Обрабатывается...</span>',
+    done:       '<span class="status-badge status-done">✓ Готово</span>',
+    error:      '<span class="status-badge status-error">Ошибка</span>',
+  };
+
+  function renderJobsTable() {
+    jobsTbody.innerHTML = "";
+    for (const [job_id, job] of Object.entries(activeJobs)) {
+      const statusHtml = STATUS_LABELS[job.status] || job.status;
+      const actionHtml = job.status === "done"
+        ? `<button class="btn btn-secondary btn-sm" onclick="showPreview('${job_id}')">Просмотр</button>`
+        : job.status === "error"
+          ? `<span style="font-size:12px;color:#dc2626" title="${job.error || ""}">⚠ ${(job.error || "").slice(0, 50)}</span>`
+          : "—";
+
+      jobsTbody.innerHTML += `
+        <tr id="job-row-${job_id}">
+          <td>
+            <div class="file-item-name">
+              <span class="file-icon">${fileIcon(job.filename)}</span>
+              <span class="file-name" title="${job.filename}">${job.filename}</span>
+            </div>
+          </td>
+          <td>${statusHtml}</td>
+          <td>${actionHtml}</td>
+        </tr>`;
+    }
+  }
+
+  // ── Поллинг статусов ───────────────────────────────────────
+  async function pollStatuses() {
+    let allDone = true;
+
+    for (const job_id of Object.keys(activeJobs)) {
+      const job = activeJobs[job_id];
+      if (job.status === "done" || job.status === "error") continue;
+
+      allDone = false;
+      try {
+        const res  = await fetch(`/status?job_id=${job_id}`);
+        const data = await res.json();
+        job.status = data.status;
+        job.error  = data.error;
+      } catch { /* сетевая ошибка — попробуем в следующий раз */ }
+    }
+
+    renderJobsTable();
+
+    if (!allDone) {
+      pollTimer = setTimeout(pollStatuses, 2000);
+    }
+  }
+
+  // ── Кнопка «Обработать» ────────────────────────────────────
   btnProcess.addEventListener("click", async () => {
     if (validFiles.length === 0) return;
 
@@ -349,16 +563,72 @@
     for (const f of validFiles) formData.append("files[]", f);
 
     try {
-      const res  = await fetch("/upload", { method: "POST", body: formData });
-      const data = await res.json();
-      console.log("Upload response:", data);
-      // Обработка очереди будет добавлена в ФТ 4.6
+      // 1. Загружаем файлы
+      const uploadRes  = await fetch("/upload", { method: "POST", body: formData });
+      const uploadData = await uploadRes.json();
+
+      if (uploadData.error) throw new Error(uploadData.error);
+
+      // 2. Инициализируем activeJobs из ответа
+      for (const j of uploadData.jobs) {
+        activeJobs[j.job_id] = { filename: j.filename, status: "queued", error: null };
+      }
+
+      // 3. Скрываем список, показываем таблицу задач
+      fileListSection.style.display = "none";
+      actionsEl.style.display       = "none";
+      validFiles = [];
+      jobsSection.style.display     = "block";
+      renderJobsTable();
+
+      // 4. Запускаем обработку
+      const jobIds = uploadData.jobs.map(j => j.job_id);
+      await fetch("/process", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ job_ids: jobIds }),
+      });
+
+      // 5. Запускаем поллинг
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = setTimeout(pollStatuses, 1000);
+
     } catch (err) {
-      alert("Ошибка при загрузке файлов: " + err.message);
+      alert("Ошибка: " + err.message);
     } finally {
       btnProcess.disabled = false;
       btnProcess.textContent = "Обработать";
     }
+  });
+
+  // ── Предпросмотр ───────────────────────────────────────────
+  async function showPreview(job_id) {
+    try {
+      const res  = await fetch(`/preview?job_id=${job_id}`);
+      const data = await res.json();
+
+      if (data.error) { alert(data.error); return; }
+
+      rawMarkdown = data.content;
+      previewBody.innerHTML     = marked.parse(data.content);
+      previewFilename.textContent = data.filename;
+      previewSaved.textContent  = `Файл сохранён: ${data.output_path}`;
+      previewSection.style.display = "block";
+      previewSection.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    } catch (err) {
+      alert("Не удалось загрузить предпросмотр: " + err.message);
+    }
+  }
+
+  // ── Кнопка «Скопировать текст» ─────────────────────────────
+  document.getElementById("btn-copy").addEventListener("click", () => {
+    if (!rawMarkdown) return;
+    navigator.clipboard.writeText(rawMarkdown).then(() => {
+      const btn = document.getElementById("btn-copy");
+      btn.textContent = "Скопировано!";
+      setTimeout(() => { btn.textContent = "Скопировать текст"; }, 2000);
+    });
   });
 </script>
 

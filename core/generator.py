@@ -4,7 +4,7 @@ from pathlib import Path
 OLLAMA_URL = "http://localhost:11434/api/chat"
 MODEL = "qwen3:4b"
 
-_SKILL_PATH = Path(__file__).parent / "skill-description.md"
+_SKILL_PATH = Path(__file__).parent.parent / "prompts" / "system_prompt.md"
 
 
 class OllamaConnectionError(Exception):
