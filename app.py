@@ -72,6 +72,13 @@ def upload():
     return jsonify({"jobs": result_jobs, "errors": result_errors})
 
 
+def save_draft(stem: str, content: str) -> Path:
+    """Сохраняет черновик в output/{stem}_черновик доки.md и возвращает путь."""
+    output_path = OUTPUT_FOLDER / f"{stem}_черновик доки.md"
+    output_path.write_text(content, encoding="utf-8")
+    return output_path
+
+
 @app.route("/health")
 def health():
     try:
