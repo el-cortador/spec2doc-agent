@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>spec2doc-agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 14px;
+      background: #f5f5f5;
+      color: #1a1a1a;
+    }
+
+    /* ── Шапка ─────────────────────────────────────────────── */
+    header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header h1 { font-size: 16px; font-weight: 600; }
+
+    #health-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: #555;
+    }
+
+    #health-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccc;
+      flex-shrink: 0;
+    }
+    #health-dot.green  { background: #22c55e; }
+    #health-dot.yellow { background: #f59e0b; }
+    #health-dot.red    { background: #ef4444; }
+
+    /* ── Основной контент ───────────────────────────────────── */
+    main {
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── Зона загрузки ──────────────────────────────────────── */
+    #drop-zone {
+      border: 2px dashed #c0c0c0;
+      border-radius: 8px;
+      background: #fff;
+      padding: 40px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+
+    #drop-zone.drag-over {
+      border-color: #3b82f6;
+      background: #eff6ff;
+    }
+
+    #drop-zone p {
+      color: #555;
+      margin-bottom: 12px;
+    }
+
+    #drop-zone span {
+      font-size: 12px;
+      color: #999;
+    }
+
+    #file-input { display: none; }
+
+    .btn {
+      display: inline-block;
+      padding: 8px 18px;
+      border-radius: 6px;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-primary  { background: #3b82f6; color: #fff; }
+    .btn-primary:not(:disabled):hover { background: #2563eb; }
+    .btn-secondary { background: #e5e7eb; color: #374151; }
+    .btn-secondary:not(:disabled):hover { background: #d1d5db; }
+
+    /* ── Список выбранных файлов ────────────────────────────── */
+    #file-list-section { display: none; }
+
+    #file-list-section h2 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 10px;
+      color: #374151;
+    }
+
+    #file-list {
+      background: #fff;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .file-item:last-child { border-bottom: none; }
+
+    .file-item-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+    }
+
+    .file-icon {
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .file-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 500px;
+    }
+
+    .file-size { color: #888; font-size: 12px; white-space: nowrap; }
+
+    .file-item-error {
+      background: #fff7f7;
+      border-left: 3px solid #ef4444;
+    }
+    .file-item-error .file-size { color: #ef4444; }
+
+    /* ── Кнопки действий ────────────────────────────────────── */
+    #actions {
+      display: none;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>spec2doc-agent</h1>
+  <div id="health-indicator">
+    <div id="health-dot"></div>
+    <span id="health-text">Проверка Ollama...</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- Зона загрузки -->
+  <div id="drop-zone" role="button" tabindex="0" aria-label="Зона загрузки файлов">
+    <p>Перетащите файлы сюда или нажмите для выбора</p>
+    <button class="btn btn-secondary" type="button" onclick="document.getElementById('file-input').click()">
+      Выбрать файлы
+    </button>
+    <br><br>
+    <span>Поддерживаются: PDF, DOCX · Максимум 20 МБ на файл</span>
+    <input id="file-input" type="file" multiple accept=".pdf,.docx">
+  </div>
+
+  <!-- Список выбранных файлов -->
+  <section id="file-list-section">
+    <h2>Выбранные файлы</h2>
+    <div id="file-list"></div>
+  </section>
+
+  <!-- Кнопки действий -->
+  <div id="actions">
+    <button id="btn-process" class="btn btn-primary" disabled>Обработать</button>
+    <button id="btn-clear" class="btn btn-secondary">Очистить</button>
+  </div>
+
+</main>
+
+<script>
+  // ── Утилиты ────────────────────────────────────────────────
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + " Б";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " КБ";
+    return (bytes / (1024 * 1024)).toFixed(1) + " МБ";
+  }
+
+  function fileIcon(name) {
+    return name.toLowerCase().endsWith(".pdf") ? "📄" : "📝";
+  }
+
+  // ── Проверка Ollama (/health будет добавлен позже) ─────────
+  const healthDot  = document.getElementById("health-dot");
+  const healthText = document.getElementById("health-text");
+
+  async function checkHealth() {
+    try {
+      const res = await fetch("/health");
+      const data = await res.json();
+      if (data.ollama && data.model_ready) {
+        healthDot.className = "green";
+        healthText.textContent = "Ollama подключена · qwen3:4b готова";
+      } else if (data.ollama && !data.model_ready) {
+        healthDot.className = "yellow";
+        healthText.textContent = "Ollama запущена, модель не найдена — выполните: ollama pull qwen3:4b";
+      } else {
+        throw new Error();
+      }
+    } catch {
+      healthDot.className = "red";
+      healthText.textContent = "Ollama недоступна — выполните: ollama serve";
+    }
+  }
+
+  checkHealth();
+
+  // ── Состояние ──────────────────────────────────────────────
+  // Файлы, прошедшие клиентскую валидацию
+  let validFiles = [];
+
+  const ALLOWED_EXT  = [".pdf", ".docx"];
+  const MAX_SIZE     = 20 * 1024 * 1024;
+
+  const dropZone       = document.getElementById("drop-zone");
+  const fileInput      = document.getElementById("file-input");
+  const fileListSection = document.getElementById("file-list-section");
+  const fileListEl     = document.getElementById("file-list");
+  const actionsEl      = document.getElementById("actions");
+  const btnProcess     = document.getElementById("btn-process");
+
+  // ── Валидация и отображение выбранных файлов ───────────────
+  function handleFiles(fileList) {
+    const incoming = Array.from(fileList);
+    const errors   = [];
+    const accepted = [];
+
+    for (const f of incoming) {
+      const ext = "." + f.name.split(".").pop().toLowerCase();
+      if (!ALLOWED_EXT.includes(ext)) {
+        errors.push({ file: f, reason: `Неподдерживаемый формат «${ext}»` });
+      } else if (f.size > MAX_SIZE) {
+        errors.push({ file: f, reason: "Файл превышает 20 МБ" });
+      } else {
+        accepted.push(f);
+      }
+    }
+
+    // Добавляем к уже выбранным (дедупликация по имени)
+    const existingNames = new Set(validFiles.map(f => f.name));
+    for (const f of accepted) {
+      if (!existingNames.has(f.name)) validFiles.push(f);
+    }
+
+    renderFileList(errors);
+  }
+
+  function renderFileList(errors = []) {
+    fileListEl.innerHTML = "";
+
+    // Принятые файлы
+    for (const f of validFiles) {
+      const ext = "." + f.name.split(".").pop().toLowerCase();
+      fileListEl.innerHTML += `
+        <div class="file-item">
+          <div class="file-item-name">
+            <span class="file-icon">${fileIcon(f.name)}</span>
+            <span class="file-name" title="${f.name}">${f.name}</span>
+          </div>
+          <span class="file-size">${formatSize(f.size)}</span>
+        </div>`;
+    }
+
+    // Отклонённые файлы
+    for (const e of errors) {
+      fileListEl.innerHTML += `
+        <div class="file-item file-item-error">
+          <div class="file-item-name">
+            <span class="file-icon">⚠️</span>
+            <span class="file-name" title="${e.file.name}">${e.file.name}</span>
+          </div>
+          <span class="file-size">${e.reason}</span>
+        </div>`;
+    }
+
+    const hasFiles = validFiles.length > 0 || errors.length > 0;
+    fileListSection.style.display = hasFiles ? "block" : "none";
+    actionsEl.style.display       = hasFiles ? "flex"  : "none";
+    btnProcess.disabled           = validFiles.length === 0;
+  }
+
+  // ── Drag-and-drop ──────────────────────────────────────────
+  dropZone.addEventListener("dragover", e => {
+    e.preventDefault();
+    dropZone.classList.add("drag-over");
+  });
+
+  dropZone.addEventListener("dragleave", () => {
+    dropZone.classList.remove("drag-over");
+  });
+
+  dropZone.addEventListener("drop", e => {
+    e.preventDefault();
+    dropZone.classList.remove("drag-over");
+    handleFiles(e.dataTransfer.files);
+  });
+
+  dropZone.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") fileInput.click();
+  });
+
+  fileInput.addEventListener("change", () => {
+    handleFiles(fileInput.files);
+    fileInput.value = ""; // сбросить, чтобы можно было выбрать тот же файл повторно
+  });
+
+  // ── Кнопка «Очистить» ─────────────────────────────────────
+  document.getElementById("btn-clear").addEventListener("click", () => {
+    validFiles = [];
+    renderFileList();
+  });
+
+  // ── Кнопка «Обработать» — будет расширена в ФТ 4.6 ────────
+  btnProcess.addEventListener("click", async () => {
+    if (validFiles.length === 0) return;
+
+    btnProcess.disabled = true;
+    btnProcess.textContent = "Загрузка...";
+
+    const formData = new FormData();
+    for (const f of validFiles) formData.append("files[]", f);
+
+    try {
+      const res  = await fetch("/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      console.log("Upload response:", data);
+      // Обработка очереди будет добавлена в ФТ 4.6
+    } catch (err) {
+      alert("Ошибка при загрузке файлов: " + err.message);
+    } finally {
+      btnProcess.disabled = false;
+      btnProcess.textContent = "Обработать";
+    }
+  });
+</script>
+
+</body>
+</html>
