@@ -1,4 +1,5 @@
 import uuid
+import requests
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template
 
@@ -69,6 +70,20 @@ def upload():
         result_jobs.append({"job_id": job_id, "filename": file.filename})
 
     return jsonify({"jobs": result_jobs, "errors": result_errors})
+
+
+@app.route("/health")
+def health():
+    try:
+        res = requests.get("http://localhost:11434/api/tags", timeout=3)
+        tags = res.json()
+        model_ready = any(
+            m.get("name", "").startswith("qwen3:4b")
+            for m in tags.get("models", [])
+        )
+        return jsonify({"ollama": True, "model_ready": model_ready})
+    except Exception:
+        return jsonify({"ollama": False, "model_ready": False})
 
 
 if __name__ == "__main__":
