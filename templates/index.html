@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>spec2doc-agent</title>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="/static/marked.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -368,6 +368,8 @@
   const healthDot  = document.getElementById("health-dot");
   const healthText = document.getElementById("health-text");
 
+  let ollamaReady = false;
+
   async function checkHealth() {
     try {
       const res  = await fetch("/health");
@@ -375,21 +377,29 @@
       if (data.ollama && data.model_ready) {
         healthDot.className = "green";
         healthText.textContent = "Ollama подключена · qwen3:4b готова";
+        ollamaReady = true;
       } else if (data.ollama && !data.model_ready) {
         healthDot.className = "yellow";
         healthText.textContent = "Ollama запущена, модель не найдена — выполните: ollama pull qwen3:4b";
+        ollamaReady = false;
       } else {
         throw new Error();
       }
     } catch {
       healthDot.className = "red";
       healthText.textContent = "Ollama недоступна — выполните: ollama serve";
+      ollamaReady = false;
     }
+    updateProcessBtn();
   }
 
   checkHealth();
 
   // ── Состояние ──────────────────────────────────────────────
+  function updateProcessBtn() {
+    btnProcess.disabled = validFiles.length === 0 || !ollamaReady;
+  }
+
   let validFiles  = [];
   let activeJobs  = {};     // job_id → { filename, status }
   let pollTimer   = null;
@@ -464,7 +474,7 @@
     const hasFiles = validFiles.length > 0 || errors.length > 0;
     fileListSection.style.display = hasFiles ? "block" : "none";
     actionsEl.style.display       = hasFiles ? "flex"  : "none";
-    btnProcess.disabled           = validFiles.length === 0;
+    updateProcessBtn();
   }
 
   // ── Drag-and-drop ──────────────────────────────────────────
