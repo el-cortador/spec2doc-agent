@@ -376,11 +376,11 @@
       const data = await res.json();
       if (data.ollama && data.model_ready) {
         healthDot.className = "green";
-        healthText.textContent = "Ollama подключена · qwen3:4b готова";
+        healthText.textContent = "Ollama подключена · Модель готова";
         ollamaReady = true;
       } else if (data.ollama && !data.model_ready) {
         healthDot.className = "yellow";
-        healthText.textContent = "Ollama запущена, модель не найдена — выполните: ollama pull qwen3:4b";
+        healthText.textContent = "Ollama запущена, модель не найдена — выполните: ollama pull qwen3.5:0.8b";
         ollamaReady = false;
       } else {
         throw new Error();
@@ -509,7 +509,7 @@
   // ── Таблица задач ──────────────────────────────────────────
   const STATUS_LABELS = {
     queued:     '<span class="status-badge status-queued">В очереди</span>',
-    processing: '<span class="status-badge status-processing"><span class="spinner"></span>Обрабатывается...</span>',
+    processing: '<span class="status-badge status-processing"><span class="spinner"></span>Обрабатывается<span class="time-info"></span></span>',
     done:       '<span class="status-badge status-done">✓ Готово</span>',
     error:      '<span class="status-badge status-error">Ошибка</span>',
   };
@@ -550,8 +550,10 @@
       try {
         const res  = await fetch(`/status?job_id=${job_id}`);
         const data = await res.json();
-        job.status = data.status;
-        job.error  = data.error;
+        job.status      = data.status;
+        job.error       = data.error;
+        job.started_at  = data.started_at ?? job.started_at;
+        job.avg_duration = data.avg_duration ?? job.avg_duration;
       } catch { /* сетевая ошибка — попробуем в следующий раз */ }
     }
 
@@ -559,7 +561,46 @@
 
     if (!allDone) {
       pollTimer = setTimeout(pollStatuses, 2000);
+      startTick();
+    } else {
+      stopTick();
     }
+  }
+
+  // ── Таймер обработки ───────────────────────────────────────
+  let tickTimer = null;
+
+  function startTick() {
+    if (tickTimer) return;
+    tickTimer = setInterval(updateTimers, 1000);
+  }
+
+  function stopTick() {
+    if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+  }
+
+  function formatDuration(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m > 0 ? `${m} мин ${s} сек` : `${s} сек`;
+  }
+
+  function updateTimers() {
+    let anyProcessing = false;
+    for (const [job_id, job] of Object.entries(activeJobs)) {
+      if (job.status !== "processing" || !job.started_at) continue;
+      anyProcessing = true;
+      const elapsed = Date.now() / 1000 - job.started_at;
+      const badge = document.querySelector(`#job-row-${job_id} .time-info`);
+      if (!badge) continue;
+      if (job.avg_duration && job.avg_duration > elapsed + 2) {
+        const remaining = job.avg_duration - elapsed;
+        badge.textContent = ` · осталось ~${formatDuration(remaining)}`;
+      } else {
+        badge.textContent = ` · ${formatDuration(elapsed)}`;
+      }
+    }
+    if (!anyProcessing) stopTick();
   }
 
   // ── Кнопка «Обработать» ────────────────────────────────────

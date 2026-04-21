@@ -25,7 +25,7 @@ if BACKEND not in _BACKENDS:
     raise ValueError(f"Неизвестный бэкенд «{BACKEND}». Допустимы: {list(_BACKENDS)}")
 
 LLM_URL = _BACKENDS[BACKEND]
-MODEL   = "qwen3:4b"  # для ollama; llamacpp использует модель, загруженную при старте
+MODEL   = "qwen3.5:0.8b"  # для ollama; llamacpp использует модель, загруженную при старте
 
 _SKILL_PATH = Path(__file__).parent.parent / "prompts" / "system_prompt.md"
 
@@ -101,7 +101,7 @@ def _call_llamacpp(messages: list[dict]) -> str:
     if response.status_code == 404:
         raise ModelNotFoundError(
             "Модель не загружена в llama.cpp server. "
-            "Укажите модель при запуске: llama-server -m qwen3-4b.gguf"
+            "Укажите модель при запуске: llama-server -m qwen3.5:0.8b.gguf"
         )
     response.raise_for_status()
 
@@ -134,6 +134,6 @@ def generate_draft(extracted_text: str) -> str:
     except requests.exceptions.ConnectionError:
         hints = {
             "ollama":   "Выполните: ollama serve",
-            "llamacpp": "Выполните: llama-server -m qwen3-4b.gguf --port 8080",
+            "llamacpp": "Выполните: llama-server -m qwen3.5:0.8b.gguf --port 8080",
         }
         raise LLMConnectionError(f"Бэкенд «{BACKEND}» недоступен. {hints[BACKEND]}")

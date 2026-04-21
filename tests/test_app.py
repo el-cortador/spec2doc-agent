@@ -72,7 +72,7 @@ def test_index_returns_200(client):
 
 def test_health_ollama_ready(client):
     mock_resp = MagicMock()
-    mock_resp.json.return_value = {"models": [{"name": "qwen3:4b"}]}
+    mock_resp.json.return_value = {"models": [{"name": "qwen3.5:0.8b"}]}
     with patch("app.requests.get", return_value=mock_resp):
         resp = client.get("/health")
     data = resp.get_json()

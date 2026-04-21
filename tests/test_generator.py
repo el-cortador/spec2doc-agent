@@ -113,7 +113,7 @@ class TestOllamaBackend:
         with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
             self.gen.generate_draft("постановка")
         payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
-        assert payload["model"] == "qwen3:4b"
+        assert payload["model"] == "qwen3.5:0.8b"
 
     def test_connection_error(self):
         with patch.object(self.gen.requests, "post", side_effect=req_lib.exceptions.ConnectionError):
