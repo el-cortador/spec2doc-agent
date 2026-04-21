@@ -1,4 +1,5 @@
 import uuid
+import time
 import queue
 import threading
 import requests
@@ -26,6 +27,16 @@ job_queue: queue.Queue = queue.Queue()
 worker_thread: threading.Thread | None = None
 worker_lock = threading.Lock()
 
+# Длительности последних завершённых задач для оценки оставшегося времени
+_completed_durations: list[float] = []
+_MAX_DURATION_SAMPLES = 5
+
+
+def _avg_duration() -> float | None:
+    if not _completed_durations:
+        return None
+    return sum(_completed_durations) / len(_completed_durations)
+
 
 # ── Фоновый воркер ────────────────────────────────────────────────────────────
 
@@ -43,6 +54,7 @@ def _process_job(job_id: str):
     if not job:
         return
 
+    job["started_at"] = time.time()
     job["status"] = "processing"
 
     try:
@@ -52,6 +64,10 @@ def _process_job(job_id: str):
         job["result"] = draft
         job["output_path"] = str(output_path)
         job["status"] = "done"
+        duration = time.time() - job["started_at"]
+        _completed_durations.append(duration)
+        if len(_completed_durations) > _MAX_DURATION_SAMPLES:
+            _completed_durations.pop(0)
     except (ParserError, LLMConnectionError, ModelNotFoundError) as e:
         job["status"] = "error"
         job["error"] = str(e)
@@ -154,6 +170,8 @@ def status():
         "filename": job["filename"],
         "status": job["status"],
         "error": job["error"],
+        "started_at": job.get("started_at"),
+        "avg_duration": _avg_duration(),
     })
 
 
@@ -187,7 +205,7 @@ def health():
         res = requests.get("http://localhost:11434/api/tags", timeout=3)
         tags = res.json()
         model_ready = any(
-            m.get("name", "").startswith("qwen3:4b")
+            m.get("name", "").startswith("qwen3.5:0.8b")
             for m in tags.get("models", [])
         )
         return jsonify({"ollama": True, "model_ready": model_ready})

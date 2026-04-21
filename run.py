@@ -1,5 +1,6 @@
 import sys
 import time
+import logging
 import subprocess
 
 import requests
@@ -7,6 +8,25 @@ import requests
 
 OLLAMA_URL = "http://localhost:11434/api/tags"
 OLLAMA_STARTUP_TIMEOUT = 30  # секунд
+STATUS_LOG_INTERVAL = 180    # секунд между записями /status в лог
+
+
+class _StatusRateLimit(logging.Filter):
+    """Пропускает лог-записи GET /status не чаще одного раза в STATUS_LOG_INTERVAL секунд."""
+
+    def __init__(self):
+        super().__init__()
+        self._last = 0.0
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        if "GET /status" not in msg:
+            return True
+        now = time.monotonic()
+        if now - self._last < STATUS_LOG_INTERVAL:
+            return False
+        self._last = now
+        return True
 
 
 def _ollama_running() -> bool:
@@ -45,6 +65,9 @@ def main():
 
     print("[run] Запускаем приложение на http://localhost:5000")
     print("[run] Для остановки нажмите Ctrl+C\n")
+
+    logging.getLogger("werkzeug").addFilter(_StatusRateLimit())
+    logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
     try:
         from app import app
