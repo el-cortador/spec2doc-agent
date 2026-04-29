@@ -1,22 +1,24 @@
 """
-Тесты модуля core/generator.py.
+Тесты модуля app/generator.py.
 Покрывают оба бэкенда: ollama и llamacpp.
 Ollama/llama.cpp не поднимаются — все HTTP-вызовы мокируются.
 """
-import json
-import pytest
-import requests as req_lib
-from unittest.mock import patch, MagicMock
+from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+import requests as req_lib
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 # ── Вспомогательные фабрики ───────────────────────────────────────────────────
 
 def _ollama_stream_response(chunks: list[dict]) -> MagicMock:
-    """Мок Ollama: iter_lines() → JSON-строки чанков."""
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status = MagicMock()
@@ -25,13 +27,11 @@ def _ollama_stream_response(chunks: list[dict]) -> MagicMock:
 
 
 def _llamacpp_stream_response(contents: list[str]) -> MagicMock:
-    """Мок llama.cpp: iter_lines() → SSE-строки data: {...} + data: [DONE]."""
     lines = []
     for content in contents:
         chunk = {"choices": [{"delta": {"content": content}}]}
         lines.append(f"data: {json.dumps(chunk)}".encode())
     lines.append(b"data: [DONE]")
-
     resp = MagicMock()
     resp.status_code = 200
     resp.raise_for_status = MagicMock()
@@ -54,9 +54,8 @@ class TestOllamaBackend:
     @pytest.fixture(autouse=True)
     def use_ollama(self, monkeypatch):
         monkeypatch.setenv("BACKEND", "ollama")
-        # Перезагружаем модуль чтобы подхватить новый env
         import importlib
-        import core.generator as gen
+        import app.generator as gen
         importlib.reload(gen)
         self.gen = gen
 
@@ -113,7 +112,7 @@ class TestOllamaBackend:
         with patch.object(self.gen.requests, "post", return_value=_ollama_stream_response(chunks)) as mock_post:
             self.gen.generate_draft("постановка")
         payload = mock_post.call_args.kwargs.get("json") or mock_post.call_args.args[1]
-        assert payload["model"] == "qwen3.5:0.8b"
+        assert payload["model"] == "qwen3:4b"
 
     def test_connection_error(self):
         with patch.object(self.gen.requests, "post", side_effect=req_lib.exceptions.ConnectionError):
@@ -134,7 +133,7 @@ class TestLlamaCppBackend:
     def use_llamacpp(self, monkeypatch):
         monkeypatch.setenv("BACKEND", "llamacpp")
         import importlib
-        import core.generator as gen
+        import app.generator as gen
         importlib.reload(gen)
         self.gen = gen
 
@@ -168,7 +167,6 @@ class TestLlamaCppBackend:
         assert "options" not in payload
 
     def test_parses_sse_done_sentinel(self):
-        """Генерация останавливается на data: [DONE], не падает."""
         with patch.object(self.gen.requests, "post", return_value=_llamacpp_stream_response(["текст"])):
             result = self.gen.generate_draft("постановка")
         assert result == "текст"

@@ -70,7 +70,7 @@ def main():
     logging.getLogger("pdfminer").setLevel(logging.ERROR)
 
     try:
-        from app import app
+        from main import app
         app.run(host="127.0.0.1", port=5000, debug=False)
     except KeyboardInterrupt:
         pass

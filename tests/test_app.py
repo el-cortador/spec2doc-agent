@@ -1,23 +1,26 @@
 """
-Тесты Flask-приложения (app.py).
+Тесты Flask-приложения (main.py).
 Используется тестовый клиент Flask; Ollama и файловые операции мокируются.
 """
-import io
-import json
-import pytest
-from unittest.mock import patch, MagicMock
+from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import app as app_module
-from app import app, jobs
+import main as app_module
+import app.jobs as jobs_module
+from main import app
+from app.jobs import Job, jobs
 
 
 @pytest.fixture(autouse=True)
 def clear_jobs():
-    """Очищаем словарь задач перед каждым тестом."""
     jobs.clear()
     yield
     jobs.clear()
@@ -25,17 +28,18 @@ def clear_jobs():
 
 @pytest.fixture
 def client(tmp_path):
-    app_module.UPLOAD_FOLDER = tmp_path / "uploads"
-    app_module.OUTPUT_FOLDER = tmp_path / "output"
-    app_module.UPLOAD_FOLDER.mkdir()
-    app_module.OUTPUT_FOLDER.mkdir()
+    upload_dir = tmp_path / "uploads"
+    output_dir = tmp_path / "output"
+    upload_dir.mkdir()
+    output_dir.mkdir()
+    app_module.UPLOAD_FOLDER = upload_dir
+    jobs_module.OUTPUT_FOLDER = output_dir
     app.config["TESTING"] = True
     with app.test_client() as c:
         yield c
 
 
 def _pdf_bytes() -> bytes:
-    """Минимальный валидный PDF."""
     return (
         b"%PDF-1.4\n"
         b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
@@ -52,7 +56,6 @@ def _pdf_bytes() -> bytes:
 
 
 def _docx_bytes() -> bytes:
-    import io
     from docx import Document as DocxDocument
     doc = DocxDocument()
     doc.add_paragraph("Тестовая постановка")
@@ -72,8 +75,8 @@ def test_index_returns_200(client):
 
 def test_health_ollama_ready(client):
     mock_resp = MagicMock()
-    mock_resp.json.return_value = {"models": [{"name": "qwen3.5:0.8b"}]}
-    with patch("app.requests.get", return_value=mock_resp):
+    mock_resp.json.return_value = {"models": [{"name": "qwen3:4b"}]}
+    with patch("main.requests.get", return_value=mock_resp):
         resp = client.get("/health")
     data = resp.get_json()
     assert data["ollama"] is True
@@ -83,7 +86,7 @@ def test_health_ollama_ready(client):
 def test_health_ollama_running_model_missing(client):
     mock_resp = MagicMock()
     mock_resp.json.return_value = {"models": [{"name": "llama3:8b"}]}
-    with patch("app.requests.get", return_value=mock_resp):
+    with patch("main.requests.get", return_value=mock_resp):
         resp = client.get("/health")
     data = resp.get_json()
     assert data["ollama"] is True
@@ -92,7 +95,7 @@ def test_health_ollama_running_model_missing(client):
 
 def test_health_ollama_unavailable(client):
     import requests as req_lib
-    with patch("app.requests.get", side_effect=req_lib.exceptions.ConnectionError):
+    with patch("main.requests.get", side_effect=req_lib.exceptions.ConnectionError):
         resp = client.get("/health")
     data = resp.get_json()
     assert data["ollama"] is False
@@ -165,7 +168,7 @@ def test_upload_creates_job_with_queued_status(client):
     data = {"files[]": (io.BytesIO(_docx_bytes()), "task.docx")}
     resp = client.post("/upload", data=data, content_type="multipart/form-data")
     job_id = resp.get_json()["jobs"][0]["job_id"]
-    assert jobs[job_id]["status"] == "queued"
+    assert jobs[job_id].status == "queued"
 
 
 # ── POST /process ─────────────────────────────────────────────────────────────
@@ -176,13 +179,11 @@ def test_process_no_job_ids_returns_400(client):
 
 
 def test_process_starts_worker(client):
-    # Создаём задачу вручную
-    jobs["test-id"] = {
-        "job_id": "test-id", "filename": "f.docx", "stem": "f",
-        "path": "/fake", "status": "queued", "error": None,
-        "result": None, "output_path": None,
-    }
-    with patch("app._process_job"):  # не запускаем реальную обработку
+    jobs["test-id"] = Job(
+        job_id="test-id", filename="f.docx", stem="f",
+        path="/fake", status="queued",
+    )
+    with patch("app.jobs._process_job"):
         resp = client.post("/process", json={"job_ids": ["test-id"]})
     assert resp.status_code == 200
     assert resp.get_json()["status"] == "started"
@@ -196,11 +197,10 @@ def test_status_unknown_job_returns_404(client):
 
 
 def test_status_returns_correct_fields(client):
-    jobs["abc"] = {
-        "job_id": "abc", "filename": "f.pdf", "stem": "f",
-        "path": "/p", "status": "processing", "error": None,
-        "result": None, "output_path": None,
-    }
+    jobs["abc"] = Job(
+        job_id="abc", filename="f.pdf", stem="f",
+        path="/p", status="processing",
+    )
     resp = client.get("/status?job_id=abc")
     data = resp.get_json()
     assert data["status"] == "processing"
@@ -210,22 +210,21 @@ def test_status_returns_correct_fields(client):
 # ── GET /preview ──────────────────────────────────────────────────────────────
 
 def test_preview_not_ready_returns_400(client):
-    jobs["xyz"] = {
-        "job_id": "xyz", "filename": "f.pdf", "stem": "f",
-        "path": "/p", "status": "processing", "error": None,
-        "result": None, "output_path": None,
-    }
+    jobs["xyz"] = Job(
+        job_id="xyz", filename="f.pdf", stem="f",
+        path="/p", status="processing",
+    )
     resp = client.get("/preview?job_id=xyz")
     assert resp.status_code == 400
 
 
 def test_preview_done_returns_content(client):
-    jobs["done-id"] = {
-        "job_id": "done-id", "filename": "spec.pdf", "stem": "spec",
-        "path": "/p", "status": "done", "error": None,
-        "result": "## Черновик\nТекст",
-        "output_path": "output/spec_черновик доки.md",
-    }
+    jobs["done-id"] = Job(
+        job_id="done-id", filename="spec.pdf", stem="spec",
+        path="/p", status="done",
+        result="## Черновик\nТекст",
+        output_path="output/spec_черновик доки.md",
+    )
     resp = client.get("/preview?job_id=done-id")
     data = resp.get_json()
     assert data["content"] == "## Черновик\nТекст"
@@ -240,16 +239,16 @@ def test_preview_unknown_job_returns_404(client):
 # ── save_draft ────────────────────────────────────────────────────────────────
 
 def test_save_draft_creates_file(client, tmp_path):
-    app_module.OUTPUT_FOLDER = tmp_path
-    path = app_module.save_draft("feature_auth", "## Черновик\nТекст")
+    jobs_module.OUTPUT_FOLDER = tmp_path
+    path = jobs_module.save_draft("feature_auth", "## Черновик\nТекст")
     assert path.exists()
     assert path.name == "feature_auth_черновик доки.md"
     assert "## Черновик" in path.read_text(encoding="utf-8")
 
 
 def test_save_draft_overwrites_existing(client, tmp_path):
-    app_module.OUTPUT_FOLDER = tmp_path
-    app_module.save_draft("doc", "Старый текст")
-    app_module.save_draft("doc", "Новый текст")
+    jobs_module.OUTPUT_FOLDER = tmp_path
+    jobs_module.save_draft("doc", "Старый текст")
+    jobs_module.save_draft("doc", "Новый текст")
     result = (tmp_path / "doc_черновик доки.md").read_text(encoding="utf-8")
     assert result == "Новый текст"
